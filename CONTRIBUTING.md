@@ -1,6 +1,6 @@
-# Contributing to UCG Max Fan Control
+# Contributing to UniFi Fan Control
 
-Thank you for your interest in contributing to the UCG Max Fan Control project! This document provides guidelines for contributing to the project.
+Thank you for your interest in contributing to the UniFi Fan Control project! This document provides guidelines for contributing to the project.
 
 ## Code of Conduct
 
@@ -98,7 +98,7 @@ When making changes, test the following scenarios:
 ## Project Structure
 
 ```
-ucg-max-fan-control/
+unifi-fan-control/
 ├── fan-control.sh          # Main control script
 ├── install.sh              # Installation script
 ├── uninstall.sh            # Removal script
@@ -141,7 +141,7 @@ refactor: Improve temperature smoothing algorithm
 
 - Check existing [documentation](README.md)
 - Review [troubleshooting guide](TROUBLESHOOTING.md)
-- Search existing [issues](https://github.com/iceteaSA/ucg-max-fan-control/issues)
+- Search existing [issues](https://github.com/iceteaSA/unifi-fan-control/issues)
 - Create a new issue with detailed information
 
 ## Recognition

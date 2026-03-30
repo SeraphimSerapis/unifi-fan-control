@@ -1,8 +1,10 @@
-# Unifi Gateway/NVR Intelligent Fan Control
+# UniFi Intelligent Fan Control
 
-Advanced temperature management for Ubiquiti Unifi Gateway/NVR devices running UniFi OS 4+ that has a fan.
+Advanced temperature management for Ubiquiti UniFi OS devices with fan control.
 
-Confirmed working on: UCG-Max, UCG-Fibre, UXG-Fibre, UNVR, UDM-SE
+Confirmed working on: UCG-Max, UCG-Fibre, UXG-Fibre, UDM-SE, UDM-Pro-Max, UDR7, UNVR
+
+> This project is built and maintained independently. If it keeps your UniFi gear cool and quiet, [consider supporting it](https://ko-fi.com/H2H719VB0U).
 
 ## Features
 - 🎛️ **Four Operational States**: 
@@ -28,7 +30,7 @@ Confirmed working on: UCG-Max, UCG-Fibre, UXG-Fibre, UNVR, UDM-SE
 
 ## Installation
 ```bash
-curl -sSL https://raw.githubusercontent.com/iceteaSA/ucg-max-fan-control/main/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/iceteaSA/unifi-fan-control/main/install.sh | sudo bash
 ```
 
 ### Using a Different Branch
@@ -37,21 +39,21 @@ If you want to install from a specific branch (e.g., for testing new features):
 **Method 1: Direct URL**
 ```bash
 # Replace 'dev' with your desired branch name
-curl -sSL https://raw.githubusercontent.com/iceteaSA/ucg-max-fan-control/dev/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/iceteaSA/unifi-fan-control/dev/install.sh | sudo bash
 ```
 
 **Method 2: Environment Variable**
 ```bash
 # Set the branch name via environment variable
-FAN_CONTROL_BRANCH=dev curl -sSL https://raw.githubusercontent.com/iceteaSA/ucg-max-fan-control/main/install.sh | sudo bash
+FAN_CONTROL_BRANCH=dev curl -sSL https://raw.githubusercontent.com/iceteaSA/unifi-fan-control/main/install.sh | sudo bash
 ```
 
 ### Manual Installation
 If you prefer to inspect the code before installation:
 ```bash
 # Clone the repository
-git clone https://github.com/iceteaSA/ucg-max-fan-control.git
-cd ucg-max-fan-control
+git clone https://github.com/iceteaSA/unifi-fan-control.git
+cd unifi-fan-control
 
 # Optionally checkout a specific branch
 # git checkout dev
@@ -237,11 +239,10 @@ systemctl restart fan-control.service  # Apply config changes
 - **Thermal Research**: [UCG-Max Thermal Thread](https://www.reddit.com/r/Ubiquiti/comments/1fr8xyt/)
 - **System Integration**: SierraSoftworks service patterns
 
-[☕Buy me a coffee](https://ko-fi.com/H2H719VB0U)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/H2H719VB0U)
 
 ---
 
 **Disclaimer**: Community project - Not affiliated with Ubiquiti Inc.  
-**Compatibility**: Verified on UniFi OS 4.0.0+ | UCG-Max, UCG-Fibre, UXG-Fibre, UNVR, UDM-SE
-
+**Compatibility**: Verified on UniFi OS 4.0.0+ | UCG-Max, UCG-Fibre, UXG-Fibre, UDM-SE, UDM-Pro-Max, UDR7, UNVR  
 **License**: MIT

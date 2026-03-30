@@ -21,7 +21,7 @@ fi
 
 # Repository information
 REPO_OWNER="iceteaSA"
-REPO_NAME="ucg-max-fan-control"
+REPO_NAME="unifi-fan-control"
 BRANCH="${FAN_CONTROL_BRANCH:-main}"  # Use environment variable if set, otherwise default to main
 BASE_URL="https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/$BRANCH"
 

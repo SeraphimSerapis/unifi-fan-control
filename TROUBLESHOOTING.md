@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This guide covers common issues and their solutions for the UCG Max Fan Control system.
+This guide covers common issues and their solutions for the UniFi Fan Control system.
 
 ## Table of Contents
 
@@ -375,14 +375,14 @@ cat /data/fan-control/config
 **Solutions**:
 ```bash
 # Method 1: Direct URL
-curl -sSL https://raw.githubusercontent.com/iceteaSA/ucg-max-fan-control/BRANCH_NAME/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/iceteaSA/unifi-fan-control/BRANCH_NAME/install.sh | sudo bash
 
 # Method 2: Environment variable
-FAN_CONTROL_BRANCH=dev curl -sSL https://raw.githubusercontent.com/iceteaSA/ucg-max-fan-control/main/install.sh | sudo bash
+FAN_CONTROL_BRANCH=dev curl -sSL https://raw.githubusercontent.com/iceteaSA/unifi-fan-control/main/install.sh | sudo bash
 
 # Method 3: Manual clone
-git clone https://github.com/iceteaSA/ucg-max-fan-control.git
-cd ucg-max-fan-control
+git clone https://github.com/iceteaSA/unifi-fan-control.git
+cd unifi-fan-control
 git checkout BRANCH_NAME
 sudo ./install.sh
 ```
@@ -513,7 +513,7 @@ If you're still experiencing issues:
    - Configuration file
    - Steps to reproduce
 
-3. **Check existing issues**: https://github.com/iceteaSA/ucg-max-fan-control/issues
+3. **Check existing issues**: https://github.com/iceteaSA/unifi-fan-control/issues
 
 ---
 
