@@ -2,7 +2,7 @@
 
 Advanced temperature management for Ubiquiti Unifi Gateway/NVR devices running UniFi OS 4+ that has a fan.
 
-Confirmed working on: UCG-Max, UCG-Fibre, UXG-Fibre, UNVR
+Confirmed working on: UCG-Max, UCG-Fibre, UXG-Fibre, UNVR, UDM-SE
 
 ## Features
 - 🎛️ **Four Operational States**: 
@@ -20,6 +20,11 @@ Confirmed working on: UCG-Max, UCG-Fibre, UXG-Fibre, UNVR
   - Sensor failure detection and recovery
   - Configuration validation
 - 🔄 **State Transition Hysteresis**: Prevents rapid state oscillation
+- 🔍 **Multi-Fan Auto-Detection**: Automatically discovers and controls all active fan channels
+  - Searches hwmon class directories first (UCG-Max, UNVR)
+  - Falls back to raw sysfs device paths when needed (UDM-SE)
+  - Identifies active fans by RPM reading and write-tests each channel
+  - All detected fans receive the same PWM value
 
 ## Installation
 ```bash
@@ -78,7 +83,10 @@ LEARNING_RATE=5   # Hourly PWM optimization step size
 TAPER_MINS=90     # Cool-down duration (minutes)
 CHECK_INTERVAL=15 # Temperature check frequency (seconds)
 
-# You probably shouldn't touch this
+# Auto-detects all active fan channels by default (recommended)
+# Set to false to use FAN_PWM_DEVICE as a single manual override instead
+FAN_PWM_AUTODETECT=true
+# Only used when FAN_PWM_AUTODETECT=false
 FAN_PWM_DEVICE="/sys/class/hwmon/hwmon0/pwm1"
 OPTIMAL_PWM_FILE="/data/fan-control/optimal_pwm"
 ```
@@ -234,5 +242,5 @@ systemctl restart fan-control.service  # Apply config changes
 ---
 
 **Disclaimer**: Community project - Not affiliated with Ubiquiti Inc.  
-**Compatibility**: Verified on UniFi OS 4.0.0+ 
+**Compatibility**: Verified on UniFi OS 4.0.0+ | UCG-Max, UCG-Fibre, UXG-Fibre, UNVR, UDM-SE
 **License**: MIT

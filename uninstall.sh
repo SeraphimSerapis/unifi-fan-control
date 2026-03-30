@@ -17,25 +17,32 @@ fi
 systemctl stop fan-control.service 2>/dev/null || true
 systemctl disable fan-control.service 2>/dev/null || true
 
-# Set PWM to zero after stopping the service
-CONFIG_FILE="/data/fan-control/config"
-DEFAULT_FAN_PWM_DEVICE="/sys/class/hwmon/hwmon0/pwm1"
+# Reset all fan PWM channels to 0
+# Mirrors the detection logic in fan-control.sh to find all active channels
+reset_ok=false
 
-# Read FAN_PWM_DEVICE from config file if it exists, otherwise use default
-if [ -f "$CONFIG_FILE" ]; then
-    FAN_PWM_DEVICE=$(grep "^FAN_PWM_DEVICE=" "$CONFIG_FILE" | cut -d'=' -f2 | tr -d '"' || echo "$DEFAULT_FAN_PWM_DEVICE")
-    # If grep didn't find anything, use default
-    [ -z "$FAN_PWM_DEVICE" ] && FAN_PWM_DEVICE="$DEFAULT_FAN_PWM_DEVICE"
-else
-    FAN_PWM_DEVICE="$DEFAULT_FAN_PWM_DEVICE"
+# Strategy 1: pwm files directly in hwmon class directories
+for pwm_file in /sys/class/hwmon/hwmon*/pwm[1-9]; do
+    if [ -e "$pwm_file" ]; then
+        echo "Resetting $pwm_file to 0..."
+        echo 0 > "$pwm_file" 2>/dev/null && reset_ok=true
+    fi
+done
+
+# Strategy 2: raw device paths (for UDM-SE where class dir has no pwm files)
+if [ "$reset_ok" = false ]; then
+    for hwmon_dir in /sys/class/hwmon/hwmon*; do
+        dev_path=$(readlink -f "$hwmon_dir/device" 2>/dev/null) || continue
+        for pwm_file in "$dev_path"/pwm[1-9]; do
+            if [ -e "$pwm_file" ]; then
+                echo "Resetting $pwm_file to 0..."
+                echo 0 > "$pwm_file" 2>/dev/null && reset_ok=true
+            fi
+        done
+    done
 fi
 
-if [ -w "$FAN_PWM_DEVICE" ]; then
-    echo "Setting fan PWM to 0..."
-    echo 0 > "$FAN_PWM_DEVICE" || echo "Warning: Could not set PWM to 0"
-else
-    echo "Warning: PWM device not writable or not found: $FAN_PWM_DEVICE"
-fi
+[ "$reset_ok" = false ] && echo "Warning: No PWM devices found to reset"
 
 # Remove system files
 echo "Removing system files..."

@@ -15,7 +15,8 @@ DEFAULT_MAX_TEMP=85            # Critical temperature (°C)
 DEFAULT_HYSTERESIS=5           # Temperature buffer (°C)
 DEFAULT_CHECK_INTERVAL=15      # Base check interval (seconds)
 DEFAULT_TAPER_MINS=90          # Cool-down duration (minutes)
-DEFAULT_FAN_PWM_DEVICE="/sys/class/hwmon/hwmon0/pwm1"
+DEFAULT_FAN_PWM_AUTODETECT=true       # Auto-detect all active fan PWM channels
+DEFAULT_FAN_PWM_DEVICE="/sys/class/hwmon/hwmon0/pwm1"  # Only used when FAN_PWM_AUTODETECT=false
 DEFAULT_OPTIMAL_PWM_FILE="/data/fan-control/optimal_pwm"
 DEFAULT_MAX_PWM_STEP=25        # Max PWM change per adjustment
 DEFAULT_DEADBAND=1             # Temp stability threshold (°C)
@@ -45,7 +46,8 @@ MAX_TEMP=$DEFAULT_MAX_TEMP            # Critical temperature (°C)
 HYSTERESIS=$DEFAULT_HYSTERESIS           # Temperature buffer (°C)
 CHECK_INTERVAL=$DEFAULT_CHECK_INTERVAL      # Base check interval (seconds)
 TAPER_MINS=$DEFAULT_TAPER_MINS          # Cool-down duration (minutes)
-FAN_PWM_DEVICE="$DEFAULT_FAN_PWM_DEVICE"
+FAN_PWM_AUTODETECT=$DEFAULT_FAN_PWM_AUTODETECT  # Auto-detect all active fan PWM channels
+FAN_PWM_DEVICE="$DEFAULT_FAN_PWM_DEVICE"  # Only used when FAN_PWM_AUTODETECT=false
 OPTIMAL_PWM_FILE="$DEFAULT_OPTIMAL_PWM_FILE"
 MAX_PWM_STEP=$DEFAULT_MAX_PWM_STEP        # Max PWM change per adjustment
 DEADBAND=$DEFAULT_DEADBAND             # Temp stability threshold (°C)
@@ -95,7 +97,8 @@ check_param "MAX_TEMP" "$DEFAULT_MAX_TEMP" "# Critical temperature (°C)"
 check_param "HYSTERESIS" "$DEFAULT_HYSTERESIS" "# Temperature buffer (°C)"
 check_param "CHECK_INTERVAL" "$DEFAULT_CHECK_INTERVAL" "# Base check interval (seconds)"
 check_param "TAPER_MINS" "$DEFAULT_TAPER_MINS" "# Cool-down duration (minutes)"
-check_param "FAN_PWM_DEVICE" "\"$DEFAULT_FAN_PWM_DEVICE\"" "# Fan PWM device path"
+check_param "FAN_PWM_AUTODETECT" "$DEFAULT_FAN_PWM_AUTODETECT" "# Auto-detect all active fan PWM channels"
+check_param "FAN_PWM_DEVICE" "\"$DEFAULT_FAN_PWM_DEVICE\"" "# Fan PWM device path (only used when FAN_PWM_AUTODETECT=false)"
 check_param "OPTIMAL_PWM_FILE" "\"$DEFAULT_OPTIMAL_PWM_FILE\"" "# Optimal PWM file path"
 check_param "MAX_PWM_STEP" "$DEFAULT_MAX_PWM_STEP" "# Max PWM change per adjustment"
 check_param "DEADBAND" "$DEFAULT_DEADBAND" "# Temp stability threshold (°C)"
@@ -138,6 +141,64 @@ if [ ${#missing_params[@]} -gt 0 ]; then
         fi
     fi
 fi
+
+###[ CONFIG MIGRATION ]########################################################
+# Migrate configs from older versions of fan-control
+# This block runs once per upgrade and rewrites the config file with updated
+# parameter names, comments, and structure. It is idempotent.
+migrate_config() {
+    local needs_migration=false
+    local migration_reasons=()
+
+    # Migration 1: FAN_PWM_DEVICE pointing to a raw sysfs device path
+    # Older versions on UDM-SE required manually setting the raw path.
+    # With auto-detection, this is no longer needed — reset to the standard default
+    # so users aren't confused by a stale raw path when FAN_PWM_AUTODETECT=true.
+    if [[ "$FAN_PWM_AUTODETECT" != "false" ]] && \
+       [[ "$FAN_PWM_DEVICE" != "$DEFAULT_FAN_PWM_DEVICE" ]] && \
+       [[ "$FAN_PWM_DEVICE" != "/sys/class/hwmon/hwmon0/pwm1" ]]; then
+        migration_reasons+=("FAN_PWM_DEVICE reset to default (was: $FAN_PWM_DEVICE)")
+        FAN_PWM_DEVICE="$DEFAULT_FAN_PWM_DEVICE"
+        needs_migration=true
+    fi
+
+    [[ "$needs_migration" = false ]] && return 0
+
+    for reason in "${migration_reasons[@]}"; do
+        logger -t fan-control "MIGRATE: $reason"
+    done
+
+    # Rewrite config with migrated values atomically
+    local temp_config="${CONFIG_FILE}.tmp"
+    if cat > "$temp_config" <<-CONFIG 2>/dev/null; then
+MIN_PWM=$MIN_PWM             # Minimum active fan speed (0-255)
+MAX_PWM=$MAX_PWM            # Maximum fan speed (0-255)
+MIN_TEMP=$MIN_TEMP            # Base threshold (°C)
+MAX_TEMP=$MAX_TEMP            # Critical temperature (°C)
+HYSTERESIS=$HYSTERESIS           # Temperature buffer (°C)
+CHECK_INTERVAL=$CHECK_INTERVAL      # Base check interval (seconds)
+TAPER_MINS=$TAPER_MINS          # Cool-down duration (minutes)
+FAN_PWM_AUTODETECT=$FAN_PWM_AUTODETECT  # Auto-detect all active fan PWM channels
+FAN_PWM_DEVICE="$FAN_PWM_DEVICE"  # Only used when FAN_PWM_AUTODETECT=false
+OPTIMAL_PWM_FILE="$OPTIMAL_PWM_FILE"
+MAX_PWM_STEP=$MAX_PWM_STEP        # Max PWM change per adjustment
+DEADBAND=$DEADBAND             # Temp stability threshold (°C)
+ALPHA=$ALPHA               # Smoothing factor (0-100)
+LEARNING_RATE=$LEARNING_RATE        # PWM optimization step size
+CONFIG
+        if mv "$temp_config" "$CONFIG_FILE" 2>/dev/null; then
+            logger -t fan-control "MIGRATE: Config file updated successfully"
+        else
+            logger -t fan-control "MIGRATE: Failed to update config file"
+            rm -f "$temp_config" 2>/dev/null
+        fi
+    else
+        logger -t fan-control "MIGRATE: Failed to write temporary config file"
+        rm -f "$temp_config" 2>/dev/null
+    fi
+}
+
+migrate_config
 
 # Validate configuration parameters
 validate_config() {
@@ -186,7 +247,8 @@ MAX_TEMP=$MAX_TEMP            # Critical temperature (°C)
 HYSTERESIS=$HYSTERESIS           # Temperature buffer (°C)
 CHECK_INTERVAL=$CHECK_INTERVAL      # Base check interval (seconds)
 TAPER_MINS=$TAPER_MINS          # Cool-down duration (minutes)
-FAN_PWM_DEVICE="$FAN_PWM_DEVICE"
+FAN_PWM_AUTODETECT=$FAN_PWM_AUTODETECT  # Auto-detect all active fan PWM channels
+FAN_PWM_DEVICE="$FAN_PWM_DEVICE"  # Only used when FAN_PWM_AUTODETECT=false
 OPTIMAL_PWM_FILE="$OPTIMAL_PWM_FILE"
 MAX_PWM_STEP=$MAX_PWM_STEP        # Max PWM change per adjustment
 DEADBAND=$DEADBAND             # Temp stability threshold (°C)
@@ -214,11 +276,104 @@ if ! command -v ubnt-systool >/dev/null 2>&1; then
     exit 1
 fi
 
-# Validate hardware access
-[[ -w "$FAN_PWM_DEVICE" ]] || {
-    logger -t fan-control "FATAL: PWM device $FAN_PWM_DEVICE not writable"
-    exit 1
+###[ PWM DEVICE DETECTION ]####################################################
+# Detect all active fan PWM channels
+# Populates the FAN_PWM_DEVICES array with writable PWM paths that have spinning fans
+detect_pwm_devices() {
+    local candidates=()
+    local detected=()
+
+    # Strategy 1: look for pwm files directly in hwmon class directories
+    # Works on: UCG-Max (lm63 driver), UNVR (adt7475, kernel exposes class symlinks)
+    for pwm_file in /sys/class/hwmon/hwmon*/pwm[1-9]; do
+        [[ -e "$pwm_file" ]] && candidates+=("$pwm_file")
+    done
+
+    # Strategy 2: if no class-level pwm files found, resolve via raw device paths
+    # Needed for UDM-SE where adt7475 driver does not expose pwm in the class dir
+    if [[ ${#candidates[@]} -eq 0 ]]; then
+        logger -t fan-control "DETECT: No pwm in hwmon class dirs, falling back to raw device paths"
+        for hwmon_dir in /sys/class/hwmon/hwmon*; do
+            local dev_path
+            dev_path=$(readlink -f "$hwmon_dir/device" 2>/dev/null) || continue
+            for pwm_file in "$dev_path"/pwm[1-9]; do
+                [[ -e "$pwm_file" ]] && candidates+=("$pwm_file")
+            done
+        done
+    fi
+
+    if [[ ${#candidates[@]} -eq 0 ]]; then
+        logger -t fan-control "FATAL: No PWM devices found in /sys"
+        exit 1
+    fi
+
+    # Filter candidates to channels that are writable and have a spinning fan
+    for pwm_file in "${candidates[@]}"; do
+        local pwm_dir
+        pwm_dir=$(dirname "$pwm_file")
+        local pwm_name
+        pwm_name=$(basename "$pwm_file")
+        local fan_num="${pwm_name#pwm}"
+        local fan_input="${pwm_dir}/fan${fan_num}_input"
+        local rpm=0
+
+        [[ -f "$fan_input" ]] && rpm=$(cat "$fan_input" 2>/dev/null || echo 0)
+
+        # Test actual writability by writing the current value back
+        # (sysfs file permissions are unreliable — a file may show 644 but still be writable by root)
+        local current_val
+        current_val=$(cat "$pwm_file" 2>/dev/null) || continue
+        if ! echo "$current_val" > "$pwm_file" 2>/dev/null; then
+            logger -t fan-control "DETECT: ${pwm_file} not writable, skipping"
+            continue
+        fi
+
+        if (( rpm > 0 )); then
+            detected+=("$pwm_file")
+            logger -t fan-control "DETECT: ${pwm_file} -> fan${fan_num} = ${rpm} RPM (active)"
+        else
+            logger -t fan-control "DETECT: ${pwm_file} -> fan${fan_num} = 0 RPM (skipped)"
+        fi
+    done
+
+    # If no fans were spinning, fall back to all writable PWM channels
+    # (handles cold boot or devices where fans only spin when PWM > 0)
+    if [[ ${#detected[@]} -eq 0 ]]; then
+        logger -t fan-control "DETECT: No spinning fans found, using all writable PWM channels"
+        for pwm_file in "${candidates[@]}"; do
+            local current_val
+            current_val=$(cat "$pwm_file" 2>/dev/null) || continue
+            echo "$current_val" > "$pwm_file" 2>/dev/null && detected+=("$pwm_file")
+        done
+    fi
+
+    if [[ ${#detected[@]} -eq 0 ]]; then
+        logger -t fan-control "FATAL: No writable PWM devices found"
+        exit 1
+    fi
+
+    FAN_PWM_DEVICES=("${detected[@]}")
+    logger -t fan-control "DETECT: Controlling ${#FAN_PWM_DEVICES[@]} fan(s): ${FAN_PWM_DEVICES[*]}"
 }
+
+# Determine PWM devices to control
+FAN_PWM_DEVICES=()
+if [[ "$FAN_PWM_AUTODETECT" != "false" ]]; then
+    detect_pwm_devices
+else
+    # Manual override — validate the configured single device
+    logger -t fan-control "DETECT: Auto-detect disabled, using configured device: $FAN_PWM_DEVICE"
+    _current_val=$(cat "$FAN_PWM_DEVICE" 2>/dev/null) || {
+        logger -t fan-control "FATAL: PWM device $FAN_PWM_DEVICE not readable"
+        exit 1
+    }
+    if ! echo "$_current_val" > "$FAN_PWM_DEVICE" 2>/dev/null; then
+        logger -t fan-control "FATAL: PWM device $FAN_PWM_DEVICE not writable"
+        exit 1
+    fi
+    unset _current_val
+    FAN_PWM_DEVICES=("$FAN_PWM_DEVICE")
+fi
 
 # Ensure directories for state files exist
 mkdir -p "$(dirname "$TEMP_STATE_FILE")" "$(dirname "$OPTIMAL_PWM_FILE")" || {
@@ -245,7 +400,7 @@ fi
 (
     flock -x 200
     echo $$ > "$PID_FILE"
-    trap 'rm -f "$PID_FILE"; exit' EXIT INT TERM
+    trap 'for _d in "${FAN_PWM_DEVICES[@]}"; do echo 0 > "$_d" 2>/dev/null; done; rm -f "$PID_FILE"; exit' EXIT INT TERM
 ) 200>"$PID_FILE"
 
 ###[ CORE FUNCTIONALITY ]######################################################
@@ -416,17 +571,17 @@ set_fan_speed() {
     if [[ "$new_speed" -ne "$LAST_PWM" ]]; then
         # Note: Due to hardware limitations, the actual PWM value applied may differ from the requested value
         # (e.g., setting 50 might result in ~48, or 100 might result in ~92)
-        if ! echo "$new_speed" > "$FAN_PWM_DEVICE" 2>/dev/null; then
-            logger -t fan-control "ERROR: Failed to write to PWM device $FAN_PWM_DEVICE"
-            # Check if device still exists
-            if [[ ! -e "$FAN_PWM_DEVICE" ]]; then
-                logger -t fan-control "FATAL: PWM device $FAN_PWM_DEVICE no longer exists"
-                # We can't continue without the PWM device, but we'll keep running to monitor temperature
-            elif [[ ! -w "$FAN_PWM_DEVICE" ]]; then
-                logger -t fan-control "FATAL: PWM device $FAN_PWM_DEVICE is no longer writable"
-                # We can't continue without write access, but we'll keep running to monitor temperature
+        local write_ok=true
+        for pwm_dev in "${FAN_PWM_DEVICES[@]}"; do
+            if ! echo "$new_speed" > "$pwm_dev" 2>/dev/null; then
+                logger -t fan-control "ERROR: Failed to write to PWM device $pwm_dev"
+                if [[ ! -e "$pwm_dev" ]]; then
+                    logger -t fan-control "FATAL: PWM device $pwm_dev no longer exists"
+                fi
+                write_ok=false
             fi
-        else
+        done
+        if [[ "$write_ok" = true ]]; then
             logger -t fan-control "SET: ${LAST_PWM}→${new_speed}pwm | Reason: ${reason}"
             LAST_PWM=$new_speed
             LAST_AVG_TEMP=$current_temp  # Reset deadband tracking on change
