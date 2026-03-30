@@ -243,4 +243,5 @@ systemctl restart fan-control.service  # Apply config changes
 
 **Disclaimer**: Community project - Not affiliated with Ubiquiti Inc.  
 **Compatibility**: Verified on UniFi OS 4.0.0+ | UCG-Max, UCG-Fibre, UXG-Fibre, UNVR, UDM-SE
+
 **License**: MIT
