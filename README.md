@@ -235,6 +235,10 @@ systemctl restart fan-control.service  # Apply config changes
 - **uninstall.sh**: Script to remove the fan control system
 - **fan-control.service**: Systemd service configuration
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=iceteaSA/unifi-fan-control&type=Date)](https://star-history.com/#iceteaSA/unifi-fan-control&Date)
+
 ## Credits & Acknowledgments
 - **Thermal Research**: [UCG-Max Thermal Thread](https://www.reddit.com/r/Ubiquiti/comments/1fr8xyt/)
 - **System Integration**: SierraSoftworks service patterns
