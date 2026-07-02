@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Test suite (`tests/`) — sandboxed, no-root, dependency-free bash tests covering config bootstrap, PWM detection, state machine, and regression tests for #17 and #18.
+- Env-var seams for testability: `FAN_CONTROL_CONFIG_FILE`, `FAN_CONTROL_TEMP_STATE_FILE`, `FAN_CONTROL_PID_FILE`, `FAN_CONTROL_OPTIMAL_PWM_FILE`, `FAN_CONTROL_HWMON_BASE`.
 - CONTRIBUTING.md with contribution guidelines
 - CHANGELOG.md for tracking version history
 - TROUBLESHOOTING.md for common issues and solutions
@@ -15,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CODE_OF_CONDUCT.md for community guidelines
 - GitHub issue templates for bug reports and feature requests
 - GitHub pull request template
+
+### Fixed
+- [#17](https://github.com/iceteaSA/unifi-fan-control/issues/17): Lock and cleanup trap were registered in a subshell that exited immediately. Moved `flock` and `trap` to the parent shell so the lock is held for the daemon's lifetime, cleanup runs on actual exit, and single-instance guard is authoritative.
+- [#18](https://github.com/iceteaSA/unifi-fan-control/issues/18): `get_smoothed_temp` was called via `$(...)`, losing `TEMP_READ_FAILURES` and `SMOOTHED_TEMP` mutations in subshells. Rewrote to communicate via globals; added a sensor fail-safe in `update_fan_state` that forces `MAX_PWM` after 3 consecutive read failures, bypassing state-machine and ramp limits.
 
 ## Recent Changes (Based on Git History)
 
