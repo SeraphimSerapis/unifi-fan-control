@@ -234,6 +234,7 @@ systemctl restart fan-control.service  # Apply config changes
   - Automatically downloads required files if not found locally
 - **uninstall.sh**: Script to remove the fan control system
 - **fan-control.service**: Systemd service configuration
+- **tests/**: Sandboxed test suite (no device, no root required); run with `tests/run-tests.sh`
 
 ## Star History
 
