@@ -4,8 +4,9 @@
 ###############################################################################
 
 ###[ CONFIGURATION ]###########################################################
-CONFIG_FILE="/data/fan-control/config"
-TEMP_STATE_FILE="/data/fan-control/temp_state"
+CONFIG_FILE="${FAN_CONTROL_CONFIG_FILE:-/data/fan-control/config}"
+TEMP_STATE_FILE="${FAN_CONTROL_TEMP_STATE_FILE:-/data/fan-control/temp_state}"
+HWMON_BASE="${FAN_CONTROL_HWMON_BASE:-/sys/class/hwmon}"
 
 # Define default configuration values
 DEFAULT_MIN_PWM=91             # Minimum active fan speed (0-255)
@@ -17,7 +18,7 @@ DEFAULT_CHECK_INTERVAL=15      # Base check interval (seconds)
 DEFAULT_TAPER_MINS=90          # Cool-down duration (minutes)
 DEFAULT_FAN_PWM_AUTODETECT=true       # Auto-detect all active fan PWM channels
 DEFAULT_FAN_PWM_DEVICE="/sys/class/hwmon/hwmon0/pwm1"  # Only used when FAN_PWM_AUTODETECT=false
-DEFAULT_OPTIMAL_PWM_FILE="/data/fan-control/optimal_pwm"
+DEFAULT_OPTIMAL_PWM_FILE="${FAN_CONTROL_OPTIMAL_PWM_FILE:-/data/fan-control/optimal_pwm}"
 DEFAULT_MAX_PWM_STEP=25        # Max PWM change per adjustment
 DEFAULT_DEADBAND=1             # Temp stability threshold (°C)
 DEFAULT_ALPHA=20               # Smoothing factor, lower values make the smoothed temp follow raw temp more closely (0-100)
@@ -285,7 +286,7 @@ detect_pwm_devices() {
 
     # Strategy 1: look for pwm files directly in hwmon class directories
     # Works on: UCG-Max (lm63 driver), UNVR (adt7475, kernel exposes class symlinks)
-    for pwm_file in /sys/class/hwmon/hwmon*/pwm[1-9]; do
+    for pwm_file in "$HWMON_BASE"/hwmon*/pwm[1-9]; do
         [[ -e "$pwm_file" ]] && candidates+=("$pwm_file")
     done
 
@@ -293,7 +294,7 @@ detect_pwm_devices() {
     # Needed for UDM-SE where adt7475 driver does not expose pwm in the class dir
     if [[ ${#candidates[@]} -eq 0 ]]; then
         logger -t fan-control "DETECT: No pwm in hwmon class dirs, falling back to raw device paths"
-        for hwmon_dir in /sys/class/hwmon/hwmon*; do
+        for hwmon_dir in "$HWMON_BASE"/hwmon*; do
             local dev_path
             dev_path=$(readlink -f "$hwmon_dir/device" 2>/dev/null) || continue
             for pwm_file in "$dev_path"/pwm[1-9]; do
@@ -381,27 +382,27 @@ mkdir -p "$(dirname "$TEMP_STATE_FILE")" "$(dirname "$OPTIMAL_PWM_FILE")" || {
     exit 1
 }
 
-# Single instance check
-PID_FILE="/var/run/fan-control.pid"
+# Single instance lock + cleanup — FD held for the daemon's lifetime
+# flock is the authoritative guard; stale PID ps-checks can false-positive on PID reuse.
+PID_FILE="${FAN_CONTROL_PID_FILE:-/var/run/fan-control.pid}"
 
-# Check for existing process
-if [[ -f "$PID_FILE" ]]; then
-    existing_pid=$(cat "$PID_FILE")
-    if ps -p "$existing_pid" >/dev/null 2>&1; then
-        logger -t fan-control "ALERT: Active service found (PID $existing_pid)"
-        exit 1
-    else
-        logger -t fan-control "CLEANUP: Removing stale PID $existing_pid"
-        rm -f "$PID_FILE"
-    fi
+cleanup() {
+    for _d in "${FAN_PWM_DEVICES[@]}"; do
+        echo 0 > "$_d" 2>/dev/null
+    done
+    rm -f "$PID_FILE" 2>/dev/null
+}
+
+# Open the lock FD WITHOUT truncating (>>) so a running instance's PID isn't clobbered
+exec 200>>"$PID_FILE"
+if ! flock -n 200; then
+    logger -t fan-control "ALERT: Another instance already holds the lock (PID $(cat "$PID_FILE" 2>/dev/null))"
+    exit 1
 fi
-
-# Create PID file with atomic lock
-(
-    flock -x 200
-    echo $$ > "$PID_FILE"
-    trap 'for _d in "${FAN_PWM_DEVICES[@]}"; do echo 0 > "$_d" 2>/dev/null; done; rm -f "$PID_FILE"; exit' EXIT INT TERM
-) 200>"$PID_FILE"
+echo $$ > "$PID_FILE"
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 ###[ CORE FUNCTIONALITY ]######################################################
 # State definitions
@@ -459,6 +460,7 @@ else
     logger -t fan-control "INIT: No saved temp, using raw=${raw_temp}°C"
 fi
 
+# MUST be called directly, never via $(...) — state must persist in the parent shell.
 get_smoothed_temp() {
     local raw_temp_output=$(ubnt-systool cputemp 2>/dev/null)
     local raw_temp
@@ -467,22 +469,7 @@ get_smoothed_temp() {
     if [[ -z "$raw_temp_output" ]] || ! [[ "$raw_temp_output" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
         TEMP_READ_FAILURES=$((TEMP_READ_FAILURES + 1))
         logger -t fan-control "ERROR: Failed to read temperature (attempt $TEMP_READ_FAILURES)"
-
-        # After 3 consecutive failures, take safety measures
-        if (( TEMP_READ_FAILURES >= 3 )); then
-            logger -t fan-control "ALERT: Multiple temperature read failures - using last known temperature"
-            # If in doubt, maintain current fan speed or increase it for safety
-            if (( CURRENT_STATE != STATE_EMERGENCY && SMOOTHED_TEMP > MIN_TEMP + 10 )); then
-                logger -t fan-control "SAFETY: Activating emergency mode due to sensor failure"
-                # Don't change SMOOTHED_TEMP, but act as if in emergency
-                if (( CURRENT_STATE != STATE_ACTIVE && CURRENT_STATE != STATE_EMERGENCY )); then
-                    CURRENT_STATE=$STATE_ACTIVE
-                    set_fan_speed $OPTIMAL_PWM
-                fi
-            fi
-        fi
-
-        # Use last known temperature
+        # Use last known temperature — fail-safe decision is in update_fan_state
         raw_temp=$SMOOTHED_TEMP
     else
         # Reset failure counter on successful read
@@ -513,7 +500,6 @@ get_smoothed_temp() {
     fi
 
     logger -t fan-control "TEMP:  RAW=${raw_temp}°C | SMOOTH=${SMOOTHED_TEMP}°C | DELTA=$((raw_temp - SMOOTHED_TEMP))°C"
-    echo $SMOOTHED_TEMP
 }
 
 calculate_speed() {
@@ -540,7 +526,7 @@ calculate_speed() {
 # Speed control with logging
 set_fan_speed() {
     local new_speed=$1
-    local current_temp=$(get_smoothed_temp)
+    local current_temp=$SMOOTHED_TEMP
     local reason="Normal operation"
 
     # Emergency override
@@ -665,9 +651,24 @@ set_fan_speed() {
 
 ###[ STATE MANAGEMENT ]########################################################
 update_fan_state() {
-    local avg_temp=$(get_smoothed_temp)
+    get_smoothed_temp
+    local avg_temp=$SMOOTHED_TEMP
     local now=$(date +%s)
     local state_transition=""
+
+    # Sensor fail-safe: write MAX_PWM directly, bypassing state machine and ramp
+    # limits (the OFF-state override in set_fan_speed would force 0).
+    if (( TEMP_READ_FAILURES >= 3 )); then
+        if (( LAST_PWM != MAX_PWM )); then
+            logger -t fan-control "ALERT: Sensor fail-safe active (${TEMP_READ_FAILURES} consecutive read failures) - forcing MAX_PWM"
+        fi
+        for pwm_dev in "${FAN_PWM_DEVICES[@]}"; do
+            echo "$MAX_PWM" > "$pwm_dev" 2>/dev/null
+        done
+        LAST_PWM=$MAX_PWM
+        CURRENT_STATE=$STATE_ACTIVE   # so recovery re-evaluates from a sane state
+        return
+    fi
 
     # Check for emergency condition first
     if (( avg_temp >= MAX_TEMP )); then
@@ -769,13 +770,13 @@ if ! [[ "$OPTIMAL_PWM" =~ ^[0-9]+$ ]] || (( OPTIMAL_PWM < MIN_PWM || OPTIMAL_PWM
 fi
 logger -t fan-control "START: Optimal=${OPTIMAL_PWM}pwm | Config: MIN=${MIN_TEMP}°C, MAX=${MAX_TEMP}°C, HYST=${HYSTERESIS}°C"
 
-initial_temp=$(get_smoothed_temp)
-if (( initial_temp >= FAN_ACTIVATION_TEMP )); then
-    logger -t fan-control "COLDSTART: Initial temp ${initial_temp}°C ≥ ${FAN_ACTIVATION_TEMP}°C"
+get_smoothed_temp
+if (( SMOOTHED_TEMP >= FAN_ACTIVATION_TEMP )); then
+    logger -t fan-control "COLDSTART: Initial temp ${SMOOTHED_TEMP}°C ≥ ${FAN_ACTIVATION_TEMP}°C"
     CURRENT_STATE=$STATE_ACTIVE
     set_fan_speed $OPTIMAL_PWM
 else
-    logger -t fan-control "COLDSTART: Initial temp ${initial_temp}°C - Fans off"
+    logger -t fan-control "COLDSTART: Initial temp ${SMOOTHED_TEMP}°C - Fans off"
     set_fan_speed 0
 fi
 
@@ -798,7 +799,7 @@ while true; do
     # Log status every 10 iterations
     (( loop_counter++ % 10 == 0 )) && {
         state_name=$(get_state_name $CURRENT_STATE)
-        current_temp=$(get_smoothed_temp)
+        current_temp=$SMOOTHED_TEMP
         logger -t fan-control "STATUS: State=${state_name} | PWM=${LAST_PWM} | Temp=${current_temp}°C"
     }
 
