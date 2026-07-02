@@ -1,0 +1,67 @@
+#!/bin/bash
+###############################################################################
+# PWM detection tests
+###############################################################################
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib/harness.sh"
+trap teardown_sandbox EXIT
+
+declare -i scenario=0
+
+# ── Scenario 1: class-dir strategy finds fan with RPM > 0 ────────────────────
+scenario=$((scenario + 1))
+setup_sandbox
+
+echo "50" > "$SANDBOX/cputemp"
+
+start_daemon
+assert_eq "$(daemon_alive && echo "alive" || echo "dead")" "alive"
+
+assert_contains "$(cat "$SANDBOX/syslog")" "fan1" "should detect fan by name"
+
+echo "  ✓ Scenario ${scenario}: Class-dir detection: fan found"
+
+stop_daemon
+cleanup_sandbox
+
+# ── Scenario 2: fallback to all-writable when no fan is spinning ─────────────
+scenario=$((scenario + 1))
+setup_sandbox
+
+echo 0 > "$SANDBOX/hwmon/hwmon0/fan1_input"
+echo "50" > "$SANDBOX/cputemp"
+
+start_daemon
+assert_eq "$(daemon_alive && echo "alive" || echo "dead")" "alive"
+
+assert_contains "$(cat "$SANDBOX/syslog")" "using all writable" "should fall back to all writable"
+
+echo "  ✓ Scenario ${scenario}: Fallback: all-writable used when no fan spinning"
+
+stop_daemon
+cleanup_sandbox
+
+# ── Scenario 3: non-writable PWM → daemon exits with FATAL ───────────────────
+scenario=$((scenario + 1))
+setup_sandbox
+
+chmod 444 "$SANDBOX/hwmon/hwmon0/pwm1"
+echo "50" > "$SANDBOX/cputemp"
+
+start_daemon
+/bin/sleep 1
+
+if daemon_alive; then
+    fail "Daemon should have exited when no writable PWM found"
+fi
+
+assert_contains "$(cat "$SANDBOX/syslog")" "FATAL" "should log FATAL on detection failure"
+
+echo "  ✓ Scenario ${scenario}: Non-writable PWM: daemon exits with FATAL"
+
+stop_daemon 2>/dev/null || true
+cleanup_sandbox
+
+echo "  All ${scenario} PWM detection scenarios passed."
